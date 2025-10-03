@@ -8,8 +8,8 @@
     <!-- Incluir Firebase (solo la versión 11.6.1 por mandato) -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, onSnapshot, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, onSnapshot, setDoc, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Establecer nivel de log para depuración de Firestore
@@ -65,10 +65,20 @@
             background-color: rgba(0, 0, 0, 0.6);
             backdrop-filter: blur(2px);
         }
+
+        .delete-btn {
+            transition: opacity 0.2s, transform 0.2s;
+        }
+
+        /* Clase para ocultar los botones de eliminar para el usuario no-admin */
+        .task-delete-btn.hidden-by-admin {
+            display: none !important;
+        }
     </style>
 </head>
 <body class="bg-gray-50 min-h-screen p-4 flex justify-center font-sans">
 
+    <!-- PANTALLA DE CARGA -->
     <div id="loading-screen" class="fixed inset-0 bg-gray-50 flex flex-col items-center justify-center z-50">
         <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-mint-green"></div>
         <p class="mt-4 text-lg text-text-dark">Cargando la lista de tareas...</p>
@@ -121,9 +131,14 @@
                 </button>
             </form>
 
-            <!-- AJUSTES DE PROGRESIÓN -->
+            <!-- ACCIONES Y AJUSTES GLOBALES -->
             <div class="space-y-3">
-                <h4 class="font-semibold text-text-dark">Ajustes Globales</h4>
+                <h4 class="font-semibold text-text-dark">Acciones Rápidas</h4>
+                <button id="reset-day-btn" class="w-full p-2 bg-gray-200 text-text-dark font-bold rounded-lg hover:bg-gray-300 transition">
+                    Reiniciar Día (Tareas a Pendiente)
+                </button>
+
+                <h4 class="font-semibold text-text-dark pt-4">Ajustes Globales</h4>
                 <input type="number" id="reward-goal-input" placeholder="Meta de Puntos (Ej: 1000)" required
                        class="w-full p-2 border border-gray-300 rounded-lg focus:ring-mint-green focus:border-mint-green">
                 <input type="text" id="reward-text-input" placeholder="Nombre de la Recompensa (Ej: Masaje en pareja)" required
@@ -157,7 +172,7 @@
     <!-- MÓDULO DE SCRIPTS -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, onSnapshot, setDoc, updateDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
@@ -168,16 +183,22 @@
         // 1. CONFIGURACIÓN FIREBASE, GLOBALES Y CONTRASEÑA
         // ----------------------------------------------------
 
-        const ADMIN_PASSWORD = "maridopoderoso"; // <--- CAMBIA ESTA CONTRASEÑA
+        // === INYECCIÓN MANUAL DE LA CONFIGURACIÓN DE FIREBASE ===
+        const FIREBASE_CONFIG = {
+            apiKey: "AIzaSyCYktJzpk3JHHWu3CZ-nLEN2TBQUijQO0s",
+            authDomain: "studio-395727845-bd961.firebaseapp.com",
+            projectId: "studio-395727845-bd961",
+            storageBucket: "studio-395727845-bd961.firebasestorage.app",
+            messagingSenderId: "670223542551",
+            appId: "1:670223542551:web:411fc2bf311d2459fc2f52"
+        };
+        // === FIN DE LA CONFIGURACIÓN DE FIREBASE ===
 
-        const firebaseConfig = {
-  apiKey: "AIzaSyCYktJzpk3JHHWu3CZ-nLEN2TBQUijQO0s",
-  authDomain: "studio-395727845-bd961.firebaseapp.com",
-  projectId: "studio-395727845-bd961",
-  storageBucket: "studio-395727845-bd961.firebasestorage.app",
-  messagingSenderId: "670223542551",
-  appId: "1:670223542551:web:411fc2bf311d2459fc2f52"
-};
+        const ADMIN_PASSWORD = "maridopoderoso"; // <--- CAMBIA ESTA CONTRASEÑA
+        let isAdminMode = false; // Nuevo estado para controlar el panel
+        
+        // El App ID se puede sacar del projectId para crear la ruta
+        const appId = FIREBASE_CONFIG.projectId; 
         
         let db;
         let auth;
@@ -216,6 +237,7 @@
             rewardGoalInput: document.getElementById('reward-goal-input'),
             rewardTextInput: document.getElementById('reward-text-input'),
             updateGoalBtn: document.getElementById('update-goal-btn'),
+            resetDayBtn: document.getElementById('reset-day-btn'), // Nuevo botón
             
             // Elementos del Modal de Contraseña
             passwordModal: document.getElementById('password-modal'),
@@ -230,25 +252,24 @@
         // ----------------------------------------------------
 
         /**
-         * Inicializa Firebase y realiza la autenticación.
+         * Inicializa Firebase y realiza la autenticación (anónima para simplificar).
          */
         async function initializeFirebase() {
             try {
-                const app = initializeApp(firebaseConfig);
+                const app = initializeApp(FIREBASE_CONFIG);
                 db = getFirestore(app);
                 auth = getAuth(app);
 
-                if (initialAuthToken) {
-                    await signInWithCustomToken(auth, initialAuthToken);
-                } else {
-                    await signInAnonymously(auth);
-                }
+                // Autenticación anónima: permite que cualquier persona acceda y escriba
+                await signInAnonymously(auth);
                 
                 userId = auth.currentUser.uid;
                 elements.userIdDisplay.textContent = `ID de Sesión: ${userId}`;
                 elements.userIdDisplay.classList.remove('hidden');
 
+                // RUTAS DE DATOS: Asegura la compatibilidad con el entorno Canvas
                 // Usamos una ruta pública compartida para que ambos usuarios vean y actualicen la misma lista
+                // La ruta es: /artifacts/{projectId}/public/data/daily_tasks/main_config
                 configDocRef = doc(db, `/artifacts/${appId}/public/data/daily_tasks/`, 'main_config');
                 
                 await checkAndSetInitialConfig();
@@ -330,6 +351,19 @@
                 const isCompleted = task.completed;
                 const taskDiv = document.createElement('div');
                 taskDiv.className = `card flex items-center justify-between p-4 rounded-xl shadow-md transition-all ${isCompleted ? 'bg-mint-green/30 opacity-70' : 'bg-white hover:bg-gray-50'}`;
+                
+                // Botón de eliminar (visible solo si isAdminMode es true)
+                const deleteButtonHTML = `
+                    <button data-task-id="${task.id}" 
+                            class="task-delete-btn delete-btn p-1 ml-2 text-deep-rose hover:bg-red-100 rounded-full transition 
+                            ${isAdminMode ? '' : 'hidden-by-admin'}" 
+                            aria-label="Eliminar Tarea">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 10-2 0v6a1 1 0 102 0V8z" clip-rule="evenodd" />
+                        </svg>
+                    </button>
+                `;
+
                 taskDiv.innerHTML = `
                     <div class="flex-1 min-w-0 mr-4">
                         <h4 class="font-semibold text-text-dark text-lg ${isCompleted ? 'line-through text-text-dark/70' : ''}">${task.title}</h4>
@@ -338,14 +372,17 @@
                             +${task.points} puntos
                         </p>
                     </div>
-                    <button data-task-id="${task.id}" data-task-points="${task.points}" 
-                            class="complete-btn flex items-center justify-center w-10 h-10 rounded-full text-white font-bold 
-                            ${isCompleted ? 'bg-deep-rose' : 'bg-mint-green hover:bg-[#008080]'}">
-                        ${isCompleted 
-                            ? '<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>'
-                            : '<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>'
-                        }
-                    </button>
+                    <div class="flex items-center space-x-2">
+                        ${deleteButtonHTML}
+                        <button data-task-id="${task.id}" data-task-points="${task.points}" 
+                                class="complete-btn flex items-center justify-center w-10 h-10 rounded-full text-white font-bold 
+                                ${isCompleted ? 'bg-deep-rose' : 'bg-mint-green hover:bg-[#008080]'}">
+                            ${isCompleted 
+                                ? '<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>'
+                                : '<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>'
+                            }
+                        </button>
+                    </div>
                 `;
                 elements.taskListContainer.appendChild(taskDiv);
             });
@@ -356,8 +393,14 @@
                 button.addEventListener('click', handleTaskToggle);
             });
 
+            document.querySelectorAll('.task-delete-btn').forEach(button => {
+                button.removeEventListener('click', handleDeleteTask); 
+                button.addEventListener('click', handleDeleteTask);
+            });
+
+
             // --- 3. RENDERIZAR PANEL DE ADMIN ---
-            if (elements.adminPanel.classList.contains('hidden')) {
+            if (elements.adminPanel.classList.contains('hidden') || isAdminMode) {
                 elements.rewardGoalInput.value = reward_goal;
                 elements.rewardTextInput.value = reward_name;
             }
@@ -417,6 +460,45 @@
             }
         }
 
+        /**
+         * Elimina una tarea de la lista (solo accesible en modo admin).
+         * @param {Event} event - Evento de click.
+         */
+        async function handleDeleteTask(event) {
+            const taskId = event.currentTarget.dataset.taskId;
+            
+            if (!isAdminMode) {
+                console.warn("Intento de eliminar tarea sin modo admin activo.");
+                return;
+            }
+
+            try {
+                const docSnap = await getDoc(configDocRef);
+                if (!docSnap.exists()) return;
+                
+                const data = docSnap.data();
+                const currentTasks = data.tasks || [];
+                
+                // Filtra la tarea a eliminar
+                const taskToDelete = currentTasks.find(t => t.id === taskId);
+                const newTasks = currentTasks.filter(t => t.id !== taskId);
+
+                // Si la tarea eliminada estaba completada, debemos restar sus puntos
+                let currentPoints = data.current_points;
+                if (taskToDelete && taskToDelete.completed) {
+                    currentPoints -= taskToDelete.points;
+                }
+                
+                await updateDoc(configDocRef, {
+                    tasks: newTasks,
+                    current_points: Math.max(0, currentPoints)
+                });
+
+            } catch (error) {
+                console.error("Error al eliminar la tarea:", error);
+            }
+        }
+
         // ----------------------------------------------------
         // 4. LÓGICA DE SEGURIDAD Y ADMINISTRACIÓN
         // ----------------------------------------------------
@@ -433,18 +515,43 @@
                 elements.adminPasswordInput.focus();
             } else {
                 // Si está visible o queremos ocultarlo (tras fallo/cancelar)
+                isAdminMode = false;
                 elements.adminPanel.classList.add('hidden');
                 elements.adminToggleBtn.textContent = 'Modo Admin';
+                // Ocultar botones de eliminar para todos
+                document.querySelectorAll('.task-delete-btn').forEach(btn => btn.classList.add('hidden-by-admin'));
             }
         }
+
+        /**
+         * Maneja la activación del modo Admin.
+         */
+        function activateAdminMode() {
+            isAdminMode = true;
+            elements.passwordModal.classList.add('hidden');
+            elements.adminPanel.classList.remove('hidden');
+            elements.adminToggleBtn.textContent = 'Ocultar Admin';
+            elements.passwordError.classList.add('hidden');
+            // Mostrar botones de eliminar solo al admin
+            document.querySelectorAll('.task-delete-btn').forEach(btn => btn.classList.remove('hidden-by-admin'));
+            // Refrescar inputs de configuración
+            getDoc(configDocRef).then(docSnap => {
+                if(docSnap.exists()){
+                    const data = docSnap.data();
+                    elements.rewardGoalInput.value = data.reward_goal;
+                    elements.rewardTextInput.value = data.reward_name;
+                }
+            });
+        }
+
 
         /**
          * Listener principal para el botón Modo Admin.
          */
         elements.adminToggleBtn.addEventListener('click', () => {
-            const isHidden = elements.adminPanel.classList.contains('hidden');
+            const isCurrentlyVisible = !elements.adminPanel.classList.contains('hidden');
             
-            if (isHidden) {
+            if (!isCurrentlyVisible) {
                 toggleAdminPanel(true); // Mostrar modal de contraseña
             } else {
                 toggleAdminPanel(false); // Ocultar panel sin contraseña
@@ -459,11 +566,7 @@
             const inputPassword = elements.adminPasswordInput.value;
 
             if (inputPassword === ADMIN_PASSWORD) {
-                // Contraseña correcta
-                elements.passwordModal.classList.add('hidden');
-                elements.adminPanel.classList.remove('hidden');
-                elements.adminToggleBtn.textContent = 'Ocultar Admin';
-                elements.passwordError.classList.add('hidden');
+                activateAdminMode();
             } else {
                 // Contraseña incorrecta
                 elements.passwordError.classList.remove('hidden');
@@ -490,8 +593,6 @@
             const timeframe = elements.newTaskTimeframe.value.trim() || 'Sin Marco Temporal';
             const points = parseInt(elements.newTaskPoints.value);
 
-            // Nota: usamos un modal personalizado para el administrador si hubiéramos querido, 
-            // pero para notificaciones sencillas del admin, un console.log o un cambio de UI es suficiente
             if (!title || isNaN(points) || points <= 0) {
                 console.error("Por favor, introduce un título y puntos válidos (> 0).");
                 return;
@@ -547,14 +648,44 @@
             }
         });
 
+        /**
+         * Reinicia todas las tareas a pendientes para un nuevo ciclo (Día/Semana).
+         */
+        elements.resetDayBtn.addEventListener('click', async () => {
+            if (!isAdminMode) return;
+            
+            try {
+                const docSnap = await getDoc(configDocRef);
+                if (!docSnap.exists()) return;
+
+                const data = docSnap.data();
+                const currentTasks = data.tasks || [];
+
+                // Mapear y cambiar 'completed' a false para todas las tareas
+                const newTasks = currentTasks.map(task => ({
+                    ...task,
+                    completed: false
+                }));
+
+                await updateDoc(configDocRef, {
+                    tasks: newTasks
+                    // current_points NO se resetean, se mantienen para el progreso de recompensa
+                });
+                console.log("Día reiniciado. Tareas marcadas como pendientes.");
+
+            } catch (error) {
+                console.error("Error al reiniciar el día:", error);
+            }
+        });
+
 
         // ----------------------------------------------------
         // 5. INICIALIZACIÓN
         // ----------------------------------------------------
-        if (firebaseConfig.projectId) {
+        if (FIREBASE_CONFIG.projectId) {
             initializeFirebase();
         } else {
-             console.error("ERROR: firebaseConfig no está definida. Asegúrate de que las variables __firebase_config y __app_id estén disponibles.");
+             console.error("ERROR: FIREBASE_CONFIG no está definida. Revisa si copiaste la configuración correctamente.");
              elements.loadingScreen.innerHTML = '<p class="text-red-600">Error de configuración de Firebase. Revisa la consola.</p>';
         }
 
