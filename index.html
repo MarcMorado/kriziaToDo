@@ -170,9 +170,14 @@
 
         const ADMIN_PASSWORD = "maridopoderoso"; // <--- CAMBIA ESTA CONTRASEÑA
 
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        const firebaseConfig = {
+  apiKey: "AIzaSyCYktJzpk3JHHWu3CZ-nLEN2TBQUijQO0s",
+  authDomain: "studio-395727845-bd961.firebaseapp.com",
+  projectId: "studio-395727845-bd961",
+  storageBucket: "studio-395727845-bd961.firebasestorage.app",
+  messagingSenderId: "670223542551",
+  appId: "1:670223542551:web:411fc2bf311d2459fc2f52"
+};
         
         let db;
         let auth;
@@ -556,3 +561,4 @@
     </script>
 </body>
 </html>
+
