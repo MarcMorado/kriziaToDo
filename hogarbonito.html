@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hogar Bonito - Tareas Diarias</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Incluir Firebase (solo la versión 11.6.1 por mandato) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, onSnapshot, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Establecer nivel de log para depuración de Firestore
+        setLogLevel('debug');
+
+        // Configuración de Colores y Estilos
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'mint-green': '#98FB98', // Verde Menta Principal
+                        'deep-rose': '#AA4A4A',  // Burdeos/Rosa Intenso
+                        'text-dark': '#1A1A1A',  // Negro Suave
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        
+        /* Estilos personalizados para el toque 'afeminado' */
+        .card {
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+
+        .scroll-container {
+            /* Asegura que la lista sea desplazable en pantallas pequeñas (móvil) */
+            max-height: 50vh; 
+            overflow-y: auto;
+        }
+
+        /* Estilo para el botón de completar */
+        .complete-btn {
+            transition: all 0.2s;
+            transform-origin: center;
+        }
+
+        .complete-btn:hover:not(.completed) {
+            transform: scale(1.05);
+        }
+        
+        /* Estilo para el contenedor principal para centrar en el móvil */
+        .main-container {
+            max-width: 420px; /* Ancho típico de un iPhone 15 */
+        }
+
+        /* Estilos del Modal de Contraseña */
+        .modal-overlay {
+            background-color: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(2px);
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen p-4 flex justify-center font-sans">
+
+    <div id="loading-screen" class="fixed inset-0 bg-gray-50 flex flex-col items-center justify-center z-50">
+        <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-mint-green"></div>
+        <p class="mt-4 text-lg text-text-dark">Cargando la lista de tareas...</p>
+    </div>
+
+    <div id="app-container" class="main-container w-full transition-opacity opacity-0 duration-500">
+        <!-- TÍTULO Y USUARIO -->
+        <header class="text-center mb-6">
+            <h1 class="text-4xl font-extrabold text-deep-rose mb-1">Hogar Bonito 🌸</h1>
+            <p class="text-sm text-text-dark/70">Tu lista de superación diaria</p>
+            <p id="user-id-display" class="text-xs mt-2 text-text-dark/50 hidden">ID de Sesión: ...</p>
+            <button id="admin-toggle-btn" class="mt-2 text-xs text-mint-green hover:text-deep-rose transition">Modo Admin</button>
+        </header>
+
+        <!-- BARRA DE PROGRESIÓN Y RECOMPENSA -->
+        <div class="card bg-white p-4 rounded-xl mb-6 shadow-lg border-b-4 border-mint-green">
+            <h2 class="text-xl font-bold text-text-dark mb-2 flex justify-between items-center">
+                <span>Progreso de Recompensa</span>
+                <span id="reward-text" class="text-deep-rose text-sm font-semibold"></span>
+            </h2>
+            <div class="w-full bg-gray-200 rounded-full h-3">
+                <div id="progress-bar" class="h-3 rounded-full bg-mint-green transition-all duration-500" style="width: 0%"></div>
+            </div>
+            <p id="points-display" class="text-sm mt-2 text-text-dark text-right"></p>
+        </div>
+        
+        <!-- LISTA DE TAREAS PENDIENTES -->
+        <h2 class="text-2xl font-bold text-text-dark mb-3">Tareas de Hoy</h2>
+        <div id="task-list-container" class="scroll-container space-y-3 pb-4">
+            <!-- Las tareas se inyectarán aquí -->
+            <p id="empty-list-message" class="text-center text-gray-500 italic mt-8 hidden">¡La lista de tareas está vacía! El administrador necesita agregar algunas.</p>
+        </div>
+
+        <!-- PANEL DE ADMINISTRACIÓN (Inicialmente oculto) -->
+        <div id="admin-panel" class="card bg-white p-4 rounded-xl mt-8 shadow-inner border-t-4 border-deep-rose hidden">
+            <h3 class="text-xl font-bold text-deep-rose mb-4">Panel de Administración (Modo Marido)</h3>
+            <p class="text-xs text-text-dark/70 mb-3">Aquí puedes gestionar la lista y el sistema de puntos.</p>
+
+            <!-- FORMULARIO PARA AÑADIR TAREA -->
+            <form id="add-task-form" class="space-y-3 mb-6">
+                <h4 class="font-semibold text-text-dark">Añadir Nueva Tarea</h4>
+                <input type="text" id="new-task-title" placeholder="Título de la tarea (Ej: Tocar el piano)" required
+                       class="w-full p-2 border border-gray-300 rounded-lg focus:ring-deep-rose focus:border-deep-rose">
+                <input type="text" id="new-task-timeframe" placeholder="Marco temporal (Ej: Después de comer)"
+                       class="w-full p-2 border border-gray-300 rounded-lg focus:ring-deep-rose focus:border-deep-rose">
+                <input type="number" id="new-task-points" placeholder="Puntos (Ej: 50)" value="50" required
+                       class="w-full p-2 border border-gray-300 rounded-lg focus:ring-deep-rose focus:border-deep-rose">
+                <button type="submit" class="w-full p-2 bg-deep-rose text-white font-bold rounded-lg hover:bg-deep-rose/80 transition">
+                    Añadir Tarea
+                </button>
+            </form>
+
+            <!-- AJUSTES DE PROGRESIÓN -->
+            <div class="space-y-3">
+                <h4 class="font-semibold text-text-dark">Ajustes Globales</h4>
+                <input type="number" id="reward-goal-input" placeholder="Meta de Puntos (Ej: 1000)" required
+                       class="w-full p-2 border border-gray-300 rounded-lg focus:ring-mint-green focus:border-mint-green">
+                <input type="text" id="reward-text-input" placeholder="Nombre de la Recompensa (Ej: Masaje en pareja)" required
+                       class="w-full p-2 border border-gray-300 rounded-lg focus:ring-mint-green focus:border-mint-green">
+                <button id="update-goal-btn" class="w-full p-2 bg-mint-green text-text-dark font-bold rounded-lg hover:bg-mint-green/80 transition">
+                    Actualizar Meta
+                </button>
+            </div>
+        </div>
+        
+    </div>
+
+    <!-- MODAL DE CONTRASEÑA -->
+    <div id="password-modal" class="modal-overlay fixed inset-0 flex items-center justify-center z-50 hidden transition-opacity duration-300">
+        <div class="bg-white p-6 rounded-xl shadow-2xl w-11/12 max-w-sm border-t-4 border-deep-rose">
+            <h3 class="text-xl font-bold text-deep-rose mb-4">Acceso de Administrador</h3>
+            <p class="text-sm text-text-dark/70 mb-3">Introduce la contraseña para acceder a la configuración.</p>
+            <form id="password-form" class="space-y-4">
+                <input type="password" id="admin-password-input" placeholder="Contraseña secreta" required
+                       class="w-full p-3 border border-gray-300 rounded-lg focus:ring-mint-green focus:border-mint-green text-lg">
+                <p id="password-error" class="text-red-500 text-sm hidden">Contraseña incorrecta. Inténtalo de nuevo.</p>
+                <div class="flex justify-end space-x-2">
+                    <button type="button" id="cancel-password-btn" class="px-4 py-2 text-sm text-text-dark bg-gray-200 rounded-lg hover:bg-gray-300 transition">Cancelar</button>
+                    <button type="submit" class="px-4 py-2 text-sm text-white bg-deep-rose font-semibold rounded-lg hover:bg-deep-rose/80 transition">Acceder</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+
+    <!-- MÓDULO DE SCRIPTS -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, onSnapshot, setDoc, updateDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Establecer nivel de log para depuración de Firestore
+        setLogLevel('debug');
+        
+        // ----------------------------------------------------
+        // 1. CONFIGURACIÓN FIREBASE, GLOBALES Y CONTRASEÑA
+        // ----------------------------------------------------
+
+        const ADMIN_PASSWORD = "maridopoderoso"; // <--- CAMBIA ESTA CONTRASEÑA
+
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        
+        let db;
+        let auth;
+        let userId = 'loading'; // ID del usuario actual (puede ser anónimo)
+        let configDocRef; // Referencia al documento de configuración pública
+
+        // Valores por defecto
+        const DEFAULT_CONFIG = {
+            tasks: [
+                { id: crypto.randomUUID(), title: 'Preparar el desayuno para los niños', timeframe: '7:30 - 8:00', points: 30, completed: false },
+                { id: crypto.randomUUID(), title: 'Organizar la colada y planchar', timeframe: 'Mañana', points: 75, completed: false },
+                { id: crypto.randomUUID(), title: 'Llamar a tu madre', timeframe: 'Tarde (16:00)', points: 50, completed: false },
+                { id: crypto.randomUUID(), title: '30 minutos de ejercicio ligero', timeframe: 'Mediodía', points: 60, completed: false },
+            ],
+            current_points: 0,
+            reward_goal: 1000,
+            reward_name: "Cena en el restaurante favorito de la familia",
+            points_per_task_default: 50
+        };
+
+        const elements = {
+            loadingScreen: document.getElementById('loading-screen'),
+            appContainer: document.getElementById('app-container'),
+            userIdDisplay: document.getElementById('user-id-display'),
+            rewardText: document.getElementById('reward-text'),
+            progressBar: document.getElementById('progress-bar'),
+            pointsDisplay: document.getElementById('points-display'),
+            taskListContainer: document.getElementById('task-list-container'),
+            emptyListMessage: document.getElementById('empty-list-message'),
+            adminToggleBtn: document.getElementById('admin-toggle-btn'),
+            adminPanel: document.getElementById('admin-panel'),
+            addTaskForm: document.getElementById('add-task-form'),
+            newTaskTitle: document.getElementById('new-task-title'),
+            newTaskTimeframe: document.getElementById('new-task-timeframe'),
+            newTaskPoints: document.getElementById('new-task-points'),
+            rewardGoalInput: document.getElementById('reward-goal-input'),
+            rewardTextInput: document.getElementById('reward-text-input'),
+            updateGoalBtn: document.getElementById('update-goal-btn'),
+            
+            // Elementos del Modal de Contraseña
+            passwordModal: document.getElementById('password-modal'),
+            passwordForm: document.getElementById('password-form'),
+            adminPasswordInput: document.getElementById('admin-password-input'),
+            passwordError: document.getElementById('password-error'),
+            cancelPasswordBtn: document.getElementById('cancel-password-btn'),
+        };
+
+        // ----------------------------------------------------
+        // 2. FUNCIONES DE UTILIDAD FIREBASE
+        // ----------------------------------------------------
+
+        /**
+         * Inicializa Firebase y realiza la autenticación.
+         */
+        async function initializeFirebase() {
+            try {
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+                
+                userId = auth.currentUser.uid;
+                elements.userIdDisplay.textContent = `ID de Sesión: ${userId}`;
+                elements.userIdDisplay.classList.remove('hidden');
+
+                // Usamos una ruta pública compartida para que ambos usuarios vean y actualicen la misma lista
+                configDocRef = doc(db, `/artifacts/${appId}/public/data/daily_tasks/`, 'main_config');
+                
+                await checkAndSetInitialConfig();
+
+                // 3. INICIAR ESCUCHA DE CAMBIOS EN TIEMPO REAL
+                setupRealtimeListener();
+
+            } catch (error) {
+                console.error("Error al inicializar o autenticar Firebase:", error);
+                elements.loadingScreen.innerHTML = '<p class="text-red-600">Error al cargar la aplicación. Revisa la consola.</p>';
+            } finally {
+                // Ocultar pantalla de carga
+                setTimeout(() => {
+                    elements.loadingScreen.classList.add('opacity-0', 'pointer-events-none');
+                    elements.appContainer.classList.remove('opacity-0');
+                }, 500);
+            }
+        }
+
+        /**
+         * Verifica si existe la configuración inicial, si no, la crea.
+         */
+        async function checkAndSetInitialConfig() {
+            try {
+                const docSnap = await getDoc(configDocRef);
+                if (!docSnap.exists()) {
+                    console.log("Configuración no encontrada. Creando valores por defecto.");
+                    await setDoc(configDocRef, DEFAULT_CONFIG);
+                }
+            } catch (error) {
+                 console.error("Error al verificar/crear la configuración inicial:", error);
+            }
+        }
+
+        /**
+         * Configura el listener en tiempo real para la lista de tareas.
+         */
+        function setupRealtimeListener() {
+            onSnapshot(configDocRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    renderApp(data);
+                } else {
+                    // Esto solo debería ocurrir si el documento es eliminado. Reiniciar.
+                    checkAndSetInitialConfig();
+                }
+            }, (error) => {
+                console.error("Error en la escucha en tiempo real:", error);
+            });
+        }
+
+        // ----------------------------------------------------
+        // 3. FUNCIONES DE RENDERIZADO Y LÓGICA DE NEGOCIO
+        // ----------------------------------------------------
+
+        /**
+         * Renderiza la aplicación completa con los datos de Firestore.
+         * @param {Object} data - Los datos de la configuración (tasks, points, goal).
+         */
+        function renderApp(data) {
+            const { tasks, current_points, reward_goal, reward_name } = data;
+            
+            // --- 1. RENDERIZAR PROGRESIÓN ---
+            const progressPercentage = Math.min(100, (current_points / reward_goal) * 100);
+            elements.progressBar.style.width = `${progressPercentage}%`;
+            elements.pointsDisplay.textContent = `${current_points} / ${reward_goal} puntos`;
+            elements.rewardText.textContent = `Recompensa: ${reward_name}`;
+            
+            // --- 2. RENDERIZAR LISTA DE TAREAS ---
+            elements.taskListContainer.innerHTML = '';
+            
+            if (tasks.length === 0) {
+                elements.emptyListMessage.classList.remove('hidden');
+            } else {
+                elements.emptyListMessage.classList.add('hidden');
+            }
+
+            tasks.forEach(task => {
+                const isCompleted = task.completed;
+                const taskDiv = document.createElement('div');
+                taskDiv.className = `card flex items-center justify-between p-4 rounded-xl shadow-md transition-all ${isCompleted ? 'bg-mint-green/30 opacity-70' : 'bg-white hover:bg-gray-50'}`;
+                taskDiv.innerHTML = `
+                    <div class="flex-1 min-w-0 mr-4">
+                        <h4 class="font-semibold text-text-dark text-lg ${isCompleted ? 'line-through text-text-dark/70' : ''}">${task.title}</h4>
+                        <p class="text-sm text-text-dark/60">${task.timeframe}</p>
+                        <p class="text-xs font-mono mt-1 text-deep-rose/80">
+                            +${task.points} puntos
+                        </p>
+                    </div>
+                    <button data-task-id="${task.id}" data-task-points="${task.points}" 
+                            class="complete-btn flex items-center justify-center w-10 h-10 rounded-full text-white font-bold 
+                            ${isCompleted ? 'bg-deep-rose' : 'bg-mint-green hover:bg-[#008080]'}">
+                        ${isCompleted 
+                            ? '<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>'
+                            : '<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>'
+                        }
+                    </button>
+                `;
+                elements.taskListContainer.appendChild(taskDiv);
+            });
+
+            // Re-adjuntar listeners de botones
+            document.querySelectorAll('.complete-btn').forEach(button => {
+                button.removeEventListener('click', handleTaskToggle); // Prevenir duplicados
+                button.addEventListener('click', handleTaskToggle);
+            });
+
+            // --- 3. RENDERIZAR PANEL DE ADMIN ---
+            if (elements.adminPanel.classList.contains('hidden')) {
+                elements.rewardGoalInput.value = reward_goal;
+                elements.rewardTextInput.value = reward_name;
+            }
+        }
+
+        /**
+         * Alterna el estado de completado de una tarea y actualiza los puntos.
+         * @param {Event} event - Evento de click.
+         */
+        async function handleTaskToggle(event) {
+            const button = event.currentTarget;
+            const taskId = button.dataset.taskId;
+            
+            button.disabled = true; // Previene doble click
+
+            try {
+                // Obtener datos actuales del documento
+                const docSnap = await getDoc(configDocRef);
+                if (!docSnap.exists()) return;
+                
+                const data = docSnap.data();
+                const currentTasks = data.tasks;
+                let currentPoints = data.current_points;
+                let taskFound = false;
+                
+                const newTasks = currentTasks.map(task => {
+                    if (task.id === taskId) {
+                        taskFound = true;
+                        const points = parseInt(task.points || data.points_per_task_default);
+                        
+                        if (task.completed) {
+                            // Desmarcar: restar puntos
+                            currentPoints -= points;
+                            task.completed = false;
+                        } else {
+                            // Marcar: sumar puntos
+                            currentPoints += points;
+                            task.completed = true;
+                        }
+                    }
+                    return task;
+                });
+                
+                if (taskFound) {
+                    await updateDoc(configDocRef, {
+                        tasks: newTasks,
+                        current_points: Math.max(0, currentPoints) // Asegura que no sea negativo
+                    });
+                } else {
+                    console.error("Tarea no encontrada para el ID:", taskId);
+                }
+
+            } catch (error) {
+                console.error("Error al actualizar la tarea/puntos:", error);
+            } finally {
+                button.disabled = false;
+            }
+        }
+
+        // ----------------------------------------------------
+        // 4. LÓGICA DE SEGURIDAD Y ADMINISTRACIÓN
+        // ----------------------------------------------------
+
+        /**
+         * Muestra/Oculta el panel de administración con verificación de contraseña.
+         */
+        function toggleAdminPanel(show) {
+            if (show) {
+                // Si está oculto y queremos mostrarlo, reiniciamos el modal y lo mostramos
+                elements.adminPasswordInput.value = '';
+                elements.passwordError.classList.add('hidden');
+                elements.passwordModal.classList.remove('hidden');
+                elements.adminPasswordInput.focus();
+            } else {
+                // Si está visible o queremos ocultarlo (tras fallo/cancelar)
+                elements.adminPanel.classList.add('hidden');
+                elements.adminToggleBtn.textContent = 'Modo Admin';
+            }
+        }
+
+        /**
+         * Listener principal para el botón Modo Admin.
+         */
+        elements.adminToggleBtn.addEventListener('click', () => {
+            const isHidden = elements.adminPanel.classList.contains('hidden');
+            
+            if (isHidden) {
+                toggleAdminPanel(true); // Mostrar modal de contraseña
+            } else {
+                toggleAdminPanel(false); // Ocultar panel sin contraseña
+            }
+        });
+
+        /**
+         * Maneja el envío del formulario de contraseña.
+         */
+        elements.passwordForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const inputPassword = elements.adminPasswordInput.value;
+
+            if (inputPassword === ADMIN_PASSWORD) {
+                // Contraseña correcta
+                elements.passwordModal.classList.add('hidden');
+                elements.adminPanel.classList.remove('hidden');
+                elements.adminToggleBtn.textContent = 'Ocultar Admin';
+                elements.passwordError.classList.add('hidden');
+            } else {
+                // Contraseña incorrecta
+                elements.passwordError.classList.remove('hidden');
+                elements.adminPasswordInput.value = '';
+                elements.adminPasswordInput.focus();
+            }
+        });
+
+        /**
+         * Maneja el botón Cancelar en el modal de contraseña.
+         */
+        elements.cancelPasswordBtn.addEventListener('click', () => {
+            elements.passwordModal.classList.add('hidden');
+            elements.passwordError.classList.add('hidden');
+        });
+
+        /**
+         * Maneja la adición de una nueva tarea.
+         */
+        elements.addTaskForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const title = elements.newTaskTitle.value.trim();
+            const timeframe = elements.newTaskTimeframe.value.trim() || 'Sin Marco Temporal';
+            const points = parseInt(elements.newTaskPoints.value);
+
+            // Nota: usamos un modal personalizado para el administrador si hubiéramos querido, 
+            // pero para notificaciones sencillas del admin, un console.log o un cambio de UI es suficiente
+            if (!title || isNaN(points) || points <= 0) {
+                console.error("Por favor, introduce un título y puntos válidos (> 0).");
+                return;
+            }
+
+            const newTask = {
+                id: crypto.randomUUID(),
+                title,
+                timeframe,
+                points,
+                completed: false
+            };
+
+            try {
+                const docSnap = await getDoc(configDocRef);
+                if (!docSnap.exists()) return;
+                
+                const currentTasks = docSnap.data().tasks || [];
+                
+                await updateDoc(configDocRef, {
+                    tasks: [...currentTasks, newTask]
+                });
+
+                elements.newTaskTitle.value = '';
+                elements.newTaskTimeframe.value = '';
+                elements.newTaskPoints.value = DEFAULT_CONFIG.points_per_task_default; // Resetear a valor por defecto
+
+            } catch (error) {
+                console.error("Error al añadir tarea:", error);
+            }
+        });
+
+        /**
+         * Maneja la actualización de la meta y el nombre de la recompensa.
+         */
+        elements.updateGoalBtn.addEventListener('click', async () => {
+            const newGoal = parseInt(elements.rewardGoalInput.value);
+            const newRewardName = elements.rewardTextInput.value.trim();
+
+            if (isNaN(newGoal) || newGoal <= 0 || !newRewardName) {
+                console.error("Por favor, introduce una meta de puntos válida y un nombre de recompensa.");
+                return;
+            }
+
+            try {
+                await updateDoc(configDocRef, {
+                    reward_goal: newGoal,
+                    reward_name: newRewardName
+                });
+                console.log("Meta y recompensa actualizadas correctamente.");
+            } catch (error) {
+                console.error("Error al actualizar la meta:", error);
+            }
+        });
+
+
+        // ----------------------------------------------------
+        // 5. INICIALIZACIÓN
+        // ----------------------------------------------------
+        if (firebaseConfig.projectId) {
+            initializeFirebase();
+        } else {
+             console.error("ERROR: firebaseConfig no está definida. Asegúrate de que las variables __firebase_config y __app_id estén disponibles.");
+             elements.loadingScreen.innerHTML = '<p class="text-red-600">Error de configuración de Firebase. Revisa la consola.</p>';
+        }
+
+    </script>
+</body>
+</html>
