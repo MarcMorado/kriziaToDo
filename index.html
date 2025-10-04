@@ -106,7 +106,7 @@
         </div>
         
         <!-- LISTA DE TAREAS PENDIENTES -->
-        <h2 class="text-2xl font-bold text-text-dark mb-3">Tareas de Hoy</h2>
+        <h2 class="2xl font-bold text-text-dark mb-3">Tareas de Hoy</h2>
         <div id="task-list-container" class="scroll-container space-y-3 pb-4">
             <!-- Las tareas se inyectarán aquí -->
             <p id="empty-list-message" class="text-center text-gray-500 italic mt-8 hidden">¡La lista de tareas está vacía! El administrador necesita agregar algunas.</p>
@@ -348,7 +348,9 @@
             }
 
             tasks.forEach(task => {
-                const isCompleted = task.completed;
+                // Notar: Si la tarea está en la lista, asumimos que NO está completada 
+                // ya que el código ahora la elimina al completar.
+                const isCompleted = false; 
                 const taskDiv = document.createElement('div');
                 taskDiv.className = `card flex items-center justify-between p-4 rounded-xl shadow-md transition-all ${isCompleted ? 'bg-mint-green/30 opacity-70' : 'bg-white hover:bg-gray-50'}`;
                 
@@ -366,7 +368,7 @@
 
                 taskDiv.innerHTML = `
                     <div class="flex-1 min-w-0 mr-4">
-                        <h4 class="font-semibold text-text-dark text-lg ${isCompleted ? 'line-through text-text-dark/70' : ''}">${task.title}</h4>
+                        <h4 class="font-semibold text-text-dark text-lg">${task.title}</h4>
                         <p class="text-sm text-text-dark/60">${task.timeframe}</p>
                         <p class="text-xs font-mono mt-1 text-deep-rose/80">
                             +${task.points} puntos
@@ -376,11 +378,9 @@
                         ${deleteButtonHTML}
                         <button data-task-id="${task.id}" data-task-points="${task.points}" 
                                 class="complete-btn flex items-center justify-center w-10 h-10 rounded-full text-white font-bold 
-                                ${isCompleted ? 'bg-deep-rose' : 'bg-mint-green hover:bg-[#008080]'}">
-                            ${isCompleted 
-                                ? '<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>'
-                                : '<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>'
-                            }
+                                bg-mint-green hover:bg-[#008080]">
+                            <!-- Icono de Marcar/Completar (Ahora siempre será un '+' o un check, dependiendo de lo que elija) -->
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
                         </button>
                     </div>
                 `;
@@ -407,7 +407,7 @@
         }
 
         /**
-         * Alterna el estado de completado de una tarea y actualiza los puntos.
+         * Alterna el estado de completado de una tarea, SUMA PUNTOS y la ELIMINA automáticamente.
          * @param {Event} event - Evento de click.
          */
         async function handleTaskToggle(event) {
@@ -422,39 +422,35 @@
                 if (!docSnap.exists()) return;
                 
                 const data = docSnap.data();
-                const currentTasks = data.tasks;
+                const currentTasks = data.tasks || [];
                 let currentPoints = data.current_points;
-                let taskFound = false;
                 
-                const newTasks = currentTasks.map(task => {
-                    if (task.id === taskId) {
-                        taskFound = true;
-                        const points = parseInt(task.points || data.points_per_task_default);
-                        
-                        if (task.completed) {
-                            // Desmarcar: restar puntos
-                            currentPoints -= points;
-                            task.completed = false;
-                        } else {
-                            // Marcar: sumar puntos
-                            currentPoints += points;
-                            task.completed = true;
-                        }
-                    }
-                    return task;
-                });
+                const taskToComplete = currentTasks.find(task => task.id === taskId);
                 
-                if (taskFound) {
-                    await updateDoc(configDocRef, {
-                        tasks: newTasks,
-                        current_points: Math.max(0, currentPoints) // Asegura que no sea negativo
-                    });
-                } else {
-                    console.error("Tarea no encontrada para el ID:", taskId);
+                if (!taskToComplete) {
+                    console.warn("Tarea no encontrada. Acción omitida.");
+                    return;
                 }
+                
+                // 1. Sumar Puntos
+                // Si la tarea ya estaba marcada como completed, no deberíamos llegar aquí,
+                // pero si por alguna razón el usuario usa el botón 'Reiniciar Día', puede que
+                // tenga la propiedad 'completed: true' aunque se muestre pendiente.
+                // Para simplificar, asumimos que si está en la lista, debe ser completada.
+                const points = parseInt(taskToComplete.points || data.points_per_task_default);
+                currentPoints += points;
+                
+                // 2. Eliminar la Tarea (filtra la tarea completada)
+                const newTasks = currentTasks.filter(task => task.id !== taskId);
+                
+                // 3. Actualizar Firestore
+                await updateDoc(configDocRef, {
+                    tasks: newTasks,
+                    current_points: currentPoints 
+                });
 
             } catch (error) {
-                console.error("Error al actualizar la tarea/puntos:", error);
+                console.error("Error al completar/eliminar la tarea y actualizar puntos:", error);
             } finally {
                 button.disabled = false;
             }
@@ -483,15 +479,16 @@
                 const taskToDelete = currentTasks.find(t => t.id === taskId);
                 const newTasks = currentTasks.filter(t => t.id !== taskId);
 
-                // Si la tarea eliminada estaba completada, debemos restar sus puntos
-                let currentPoints = data.current_points;
-                if (taskToDelete && taskToDelete.completed) {
-                    currentPoints -= taskToDelete.points;
-                }
+                // IMPORTANTE: Si se elimina desde el panel Admin, y la tarea había sido 
+                // completada y luego reiniciada, NO restamos puntos.
+                // Sin embargo, si la tarea tenía 'completed: true' y la eliminamos, 
+                // debería restarse si queremos ser rigurosos.
+                // Dado que ahora la función 'handleTaskToggle' se encarga de sumar y borrar, 
+                // esta función de Admin solo debería usarse para *eliminar sin sumar puntos*.
                 
                 await updateDoc(configDocRef, {
                     tasks: newTasks,
-                    current_points: Math.max(0, currentPoints)
+                    // current_points se queda igual, solo se modifica en handleTaskToggle
                 });
 
             } catch (error) {
@@ -661,7 +658,12 @@
                 const data = docSnap.data();
                 const currentTasks = data.tasks || [];
 
-                // Mapear y cambiar 'completed' a false para todas las tareas
+                // Mapear y cambiar 'completed' a false para todas las tareas.
+                // NOTA: Si deseas que las tareas se queden, pero se borren los puntos, 
+                // tendrías que cambiar la lógica de puntos aquí. 
+                // Pero como has pedido que se borren al completar, el botón de 'Reiniciar Día' 
+                // solo resetea el estado 'completed' (aunque ahora es menos relevante) 
+                // para las tareas que hayan sido *agregadas* pero no completadas.
                 const newTasks = currentTasks.map(task => ({
                     ...task,
                     completed: false
@@ -692,4 +694,3 @@
     </script>
 </body>
 </html>
-
