@@ -1,28 +1,25 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hogar Bonito - Tareas Diarias</title>
+    <title>Hogar Bonito - Daily Tasks</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Incluir Firebase (solo la versión 11.6.1 por mandato) -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, onSnapshot, setDoc, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Establecer nivel de log para depuración de Firestore
-        setLogLevel('debug');
+        setLogLevel('silent'); // Reducimos el ruido en consola
 
-        // Configuración de Colores y Estilos
         tailwind.config = {
             theme: {
                 extend: {
                     colors: {
-                        'mint-green': '#98FB98', // Verde Menta Principal
-                        'deep-rose': '#AA4A4A',  // Burdeos/Rosa Intenso
-                        'text-dark': '#1A1A1A',  // Negro Suave
+                        'mint-green': '#98FB98', 
+                        'deep-rose': '#AA4A4A', 
+                        'text-dark': '#1A1A1A', 
                     },
                     fontFamily: {
                         sans: ['Inter', 'sans-serif'],
@@ -34,69 +31,34 @@
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
         
-        /* Estilos personalizados para el toque 'afeminado' */
-        .card {
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-        }
-
-        .scroll-container {
-            /* Asegura que la lista sea desplazable en pantallas pequeñas (móvil) */
-            max-height: 50vh; 
-            overflow-y: auto;
-        }
-
-        /* Estilo para el botón de completar */
-        .complete-btn {
-            transition: all 0.2s;
-            transform-origin: center;
-        }
-
-        .complete-btn:hover:not(.completed) {
-            transform: scale(1.05);
-        }
-        
-        /* Estilo para el contenedor principal para centrar en el móvil */
-        .main-container {
-            max-width: 420px; /* Ancho típico de un iPhone 15 */
-        }
-
-        /* Estilos del Modal de Contraseña */
-        .modal-overlay {
-            background-color: rgba(0, 0, 0, 0.6);
-            backdrop-filter: blur(2px);
-        }
-
-        .delete-btn {
-            transition: opacity 0.2s, transform 0.2s;
-        }
-
-        /* Clase para ocultar los botones de eliminar para el usuario no-admin */
-        .task-delete-btn.hidden-by-admin {
-            display: none !important;
-        }
+        .card { box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); }
+        .scroll-container { max-height: 50vh; overflow-y: auto; }
+        .complete-btn { transition: all 0.2s; transform-origin: center; }
+        .complete-btn:hover:not(.completed) { transform: scale(1.05); }
+        .main-container { max-width: 420px; }
+        .modal-overlay { background-color: rgba(0, 0, 0, 0.6); backdrop-filter: blur(2px); }
+        .delete-btn { transition: opacity 0.2s, transform 0.2s; }
+        .task-delete-btn.hidden-by-admin { display: none !important; }
     </style>
 </head>
 <body class="bg-gray-50 min-h-screen p-4 flex justify-center font-sans">
 
-    <!-- PANTALLA DE CARGA -->
     <div id="loading-screen" class="fixed inset-0 bg-gray-50 flex flex-col items-center justify-center z-50">
         <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-mint-green"></div>
-        <p class="mt-4 text-lg text-text-dark">Cargando la lista de tareas...</p>
+        <p class="mt-4 text-lg text-text-dark">Loading your beautiful day...</p>
     </div>
 
     <div id="app-container" class="main-container w-full transition-opacity opacity-0 duration-500">
-        <!-- TÍTULO Y USUARIO -->
         <header class="text-center mb-6">
             <h1 class="text-4xl font-extrabold text-deep-rose mb-1">Hogar Bonito 🌸</h1>
-            <p class="text-sm text-text-dark/70">Tu lista de superación diaria</p>
-            <p id="user-id-display" class="text-xs mt-2 text-text-dark/50 hidden">ID de Sesión: ...</p>
-            <button id="admin-toggle-btn" class="mt-2 text-xs text-mint-green hover:text-deep-rose transition">Modo Admin</button>
+            <p class="text-sm text-text-dark/70">Daily Self-Improvement</p>
+            <p id="user-id-display" class="text-xs mt-2 text-text-dark/50 hidden">Session ID: ...</p>
+            <button id="admin-toggle-btn" class="mt-2 text-xs text-mint-green hover:text-deep-rose transition">Admin Mode</button>
         </header>
 
-        <!-- BARRA DE PROGRESIÓN Y RECOMPENSA -->
         <div class="card bg-white p-4 rounded-xl mb-6 shadow-lg border-b-4 border-mint-green">
             <h2 class="text-xl font-bold text-text-dark mb-2 flex justify-between items-center">
-                <span>Progreso de Recompensa</span>
+                <span>Reward Progress</span>
                 <span id="reward-text" class="text-deep-rose text-sm font-semibold"></span>
             </h2>
             <div class="w-full bg-gray-200 rounded-full h-3">
@@ -105,85 +67,64 @@
             <p id="points-display" class="text-sm mt-2 text-text-dark text-right"></p>
         </div>
         
-        <!-- LISTA DE TAREAS PENDIENTES -->
-        <h2 class="2xl font-bold text-text-dark mb-3">Tareas de Hoy</h2>
+        <h2 class="2xl font-bold text-text-dark mb-3">Today's Tasks</h2>
         <div id="task-list-container" class="scroll-container space-y-3 pb-4">
-            <!-- Las tareas se inyectarán aquí -->
-            <p id="empty-list-message" class="text-center text-gray-500 italic mt-8 hidden">¡La lista de tareas está vacía! El administrador necesita agregar algunas.</p>
+            <p id="empty-list-message" class="text-center text-gray-500 italic mt-8 hidden">All tasks completed! Amazing job! 💖</p>
         </div>
 
-        <!-- PANEL DE ADMINISTRACIÓN (Inicialmente oculto) -->
         <div id="admin-panel" class="card bg-white p-4 rounded-xl mt-8 shadow-inner border-t-4 border-deep-rose hidden">
-            <h3 class="text-xl font-bold text-deep-rose mb-4">Panel de Administración (Modo Marido)</h3>
-            <p class="text-xs text-text-dark/70 mb-3">Aquí puedes gestionar la lista y el sistema de puntos.</p>
-
-            <!-- FORMULARIO PARA AÑADIR TAREA -->
+            <h3 class="text-xl font-bold text-deep-rose mb-4">Admin Panel (Husband Mode)</h3>
+            
             <form id="add-task-form" class="space-y-3 mb-6">
-                <h4 class="font-semibold text-text-dark">Añadir Nueva Tarea</h4>
-                <input type="text" id="new-task-title" placeholder="Título de la tarea (Ej: Tocar el piano)" required
+                <h4 class="font-semibold text-text-dark">Add Manual Task</h4>
+                <input type="text" id="new-task-title" placeholder="Title (e.g., Kiss me)" required
                        class="w-full p-2 border border-gray-300 rounded-lg focus:ring-deep-rose focus:border-deep-rose">
-                <input type="text" id="new-task-timeframe" placeholder="Marco temporal (Ej: Después de comer)"
-                       class="w-full p-2 border border-gray-300 rounded-lg focus:ring-deep-rose focus:border-deep-rose">
-                <input type="number" id="new-task-points" placeholder="Puntos (Ej: 50)" value="50" required
+                <input type="number" id="new-task-points" placeholder="Points (e.g., 50)" value="50" required
                        class="w-full p-2 border border-gray-300 rounded-lg focus:ring-deep-rose focus:border-deep-rose">
                 <button type="submit" class="w-full p-2 bg-deep-rose text-white font-bold rounded-lg hover:bg-deep-rose/80 transition">
-                    Añadir Tarea
+                    Add Task
                 </button>
             </form>
 
-            <!-- ACCIONES Y AJUSTES GLOBALES -->
             <div class="space-y-3">
-                <h4 class="font-semibold text-text-dark">Acciones Rápidas</h4>
-                <button id="reset-day-btn" class="w-full p-2 bg-gray-200 text-text-dark font-bold rounded-lg hover:bg-gray-300 transition">
-                    Reiniciar Día (Tareas a Pendiente)
-                </button>
-
-                <h4 class="font-semibold text-text-dark pt-4">Ajustes Globales</h4>
-                <input type="number" id="reward-goal-input" placeholder="Meta de Puntos (Ej: 1000)" required
+                <h4 class="font-semibold text-text-dark">Global Settings</h4>
+                <input type="number" id="reward-goal-input" placeholder="Point Goal (e.g., 1000)" required
                        class="w-full p-2 border border-gray-300 rounded-lg focus:ring-mint-green focus:border-mint-green">
-                <input type="text" id="reward-text-input" placeholder="Nombre de la Recompensa (Ej: Masaje en pareja)" required
+                <input type="text" id="reward-text-input" placeholder="Reward Name" required
                        class="w-full p-2 border border-gray-300 rounded-lg focus:ring-mint-green focus:border-mint-green">
                 <button id="update-goal-btn" class="w-full p-2 bg-mint-green text-text-dark font-bold rounded-lg hover:bg-mint-green/80 transition">
-                    Actualizar Meta
+                    Update Goal
+                </button>
+                
+                <h4 class="font-semibold text-text-dark pt-2">Force Schedule Update</h4>
+                <button id="force-refresh-btn" class="w-full p-2 bg-blue-100 text-blue-800 font-bold rounded-lg hover:bg-blue-200 transition text-sm">
+                    Force "Today's" Tasks (Reset)
                 </button>
             </div>
         </div>
-        
     </div>
 
-    <!-- MODAL DE CONTRASEÑA -->
     <div id="password-modal" class="modal-overlay fixed inset-0 flex items-center justify-center z-50 hidden transition-opacity duration-300">
         <div class="bg-white p-6 rounded-xl shadow-2xl w-11/12 max-w-sm border-t-4 border-deep-rose">
-            <h3 class="text-xl font-bold text-deep-rose mb-4">Acceso de Administrador</h3>
-            <p class="text-sm text-text-dark/70 mb-3">Introduce la contraseña para acceder a la configuración.</p>
+            <h3 class="text-xl font-bold text-deep-rose mb-4">Admin Access</h3>
             <form id="password-form" class="space-y-4">
-                <input type="password" id="admin-password-input" placeholder="Contraseña secreta" required
+                <input type="password" id="admin-password-input" placeholder="Secret Password" required
                        class="w-full p-3 border border-gray-300 rounded-lg focus:ring-mint-green focus:border-mint-green text-lg">
-                <p id="password-error" class="text-red-500 text-sm hidden">Contraseña incorrecta. Inténtalo de nuevo.</p>
+                <p id="password-error" class="text-red-500 text-sm hidden">Wrong password.</p>
                 <div class="flex justify-end space-x-2">
-                    <button type="button" id="cancel-password-btn" class="px-4 py-2 text-sm text-text-dark bg-gray-200 rounded-lg hover:bg-gray-300 transition">Cancelar</button>
-                    <button type="submit" class="px-4 py-2 text-sm text-white bg-deep-rose font-semibold rounded-lg hover:bg-deep-rose/80 transition">Acceder</button>
+                    <button type="button" id="cancel-password-btn" class="px-4 py-2 text-sm text-text-dark bg-gray-200 rounded-lg">Cancel</button>
+                    <button type="submit" class="px-4 py-2 text-sm text-white bg-deep-rose font-semibold rounded-lg">Login</button>
                 </div>
             </form>
         </div>
     </div>
 
-
-    <!-- MÓDULO DE SCRIPTS -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, onSnapshot, setDoc, updateDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Establecer nivel de log para depuración de Firestore
-        setLogLevel('debug');
-        
-        // ----------------------------------------------------
-        // 1. CONFIGURACIÓN FIREBASE, GLOBALES Y CONTRASEÑA
-        // ----------------------------------------------------
-
-        // === INYECCIÓN MANUAL DE LA CONFIGURACIÓN DE FIREBASE ===
+        // === CONFIGURACIÓN ===
         const FIREBASE_CONFIG = {
             apiKey: "AIzaSyCYktJzpk3JHHWu3CZ-nLEN2TBQUijQO0s",
             authDomain: "studio-395727845-bd961.firebaseapp.com",
@@ -192,505 +133,303 @@
             messagingSenderId: "670223542551",
             appId: "1:670223542551:web:411fc2bf311d2459fc2f52"
         };
-        // === FIN DE LA CONFIGURACIÓN DE FIREBASE ===
 
-        const ADMIN_PASSWORD = "maridopoderoso"; // <--- CAMBIA ESTA CONTRASEÑA
-        let isAdminMode = false; // Nuevo estado para controlar el panel
-        
-        // El App ID se puede sacar del projectId para crear la ruta
-        const appId = FIREBASE_CONFIG.projectId; 
-        
-        let db;
-        let auth;
-        let userId = 'loading'; // ID del usuario actual (puede ser anónimo)
-        let configDocRef; // Referencia al documento de configuración pública
+        const ADMIN_PASSWORD = "maridopoderoso"; 
+        const RESET_HOUR = 7; // Hora a la que se reinicia el día (7 AM)
 
-        // Valores por defecto
-        const DEFAULT_CONFIG = {
-            tasks: [
-                { id: crypto.randomUUID(), title: 'Preparar el desayuno para los niños', timeframe: '7:30 - 8:00', points: 30, completed: false },
-                { id: crypto.randomUUID(), title: 'Organizar la colada y planchar', timeframe: 'Mañana', points: 75, completed: false },
-                { id: crypto.randomUUID(), title: 'Llamar a tu madre', timeframe: 'Tarde (16:00)', points: 50, completed: false },
-                { id: crypto.randomUUID(), title: '30 minutos de ejercicio ligero', timeframe: 'Mediodía', points: 60, completed: false },
+        // === CALENDARIO SEMANAL (EN INGLÉS) ===
+        // 0=Sunday, 1=Monday, ... 6=Saturday
+        const WEEKLY_SCHEDULE = {
+            1: [ // Monday (Lunes)
+                { t: "Go to the gym", p: 10 },
+                { t: "Make the bed", p: 5 },
+                { t: "Start the washing machine", p: 8 },
+                { t: "Massage", p: 10 },
+                { t: "Hang out the laundry", p: 8 }
             ],
-            current_points: 0,
-            reward_goal: 1000,
-            reward_name: "Cena en el restaurante favorito de la familia",
-            points_per_task_default: 50
+            2: [ // Tuesday (Martes)
+                { t: "Go for a run", p: 10 },
+                { t: "Fold dried clothes", p: 8 },
+                { t: "Help me clean the house", p: 15 }
+            ],
+            3: [ // Wednesday (Miercoles)
+                { t: "Go to the gym", p: 10 },
+                { t: "Send me a nice photo", p: 2 },
+                { t: "Work", p: 5 },
+                { t: "Make dinner", p: 8 },
+                { t: "Start the washing machine", p: 8 },
+                { t: "Hang out the laundry", p: 8 }
+            ],
+            4: [ // Thursday (Jueves)
+                { t: "Go for a run", p: 10 },
+                { t: "Fold dried clothes", p: 8 },
+                { t: "Send me a cute photo", p: 2 },
+                { t: "Work", p: 5 },
+                { t: "Make dinner", p: 8 }
+            ],
+            5: [ // Friday (Viernes)
+                { t: "Go to the gym", p: 10 },
+                { t: "Send me a nice photo", p: 2 },
+                { t: "Work", p: 5 },
+                { t: "Make dinner", p: 8 }
+            ],
+            6: [ // Saturday (Tu segundo 'Miercoles')
+                { t: "Send me a nice photo", p: 2 },
+                { t: "Work", p: 5 },
+                { t: "Make dinner", p: 8 },
+                { t: "Start the washing machine", p: 8 },
+                { t: "Hang out the laundry", p: 8 }
+            ],
+            0: [ // Sunday (Domingo)
+                { t: "Fold clothes", p: 8 },
+                { t: "Long massage", p: 25 }
+            ]
         };
 
-        const elements = {
-            loadingScreen: document.getElementById('loading-screen'),
-            appContainer: document.getElementById('app-container'),
-            userIdDisplay: document.getElementById('user-id-display'),
-            rewardText: document.getElementById('reward-text'),
+        let db, auth, configDocRef;
+        let isAdminMode = false;
+
+        // Elementos DOM
+        const els = {
+            loading: document.getElementById('loading-screen'),
+            app: document.getElementById('app-container'),
+            list: document.getElementById('task-list-container'),
+            empty: document.getElementById('empty-list-message'),
+            rewardGoal: document.getElementById('reward-goal-input'),
+            rewardText: document.getElementById('reward-text-input'),
             progressBar: document.getElementById('progress-bar'),
-            pointsDisplay: document.getElementById('points-display'),
-            taskListContainer: document.getElementById('task-list-container'),
-            emptyListMessage: document.getElementById('empty-list-message'),
-            adminToggleBtn: document.getElementById('admin-toggle-btn'),
+            points: document.getElementById('points-display'),
+            rewardLabel: document.getElementById('reward-text'),
             adminPanel: document.getElementById('admin-panel'),
-            addTaskForm: document.getElementById('add-task-form'),
-            newTaskTitle: document.getElementById('new-task-title'),
-            newTaskTimeframe: document.getElementById('new-task-timeframe'),
-            newTaskPoints: document.getElementById('new-task-points'),
-            rewardGoalInput: document.getElementById('reward-goal-input'),
-            rewardTextInput: document.getElementById('reward-text-input'),
-            updateGoalBtn: document.getElementById('update-goal-btn'),
-            resetDayBtn: document.getElementById('reset-day-btn'), // Nuevo botón
-            
-            // Elementos del Modal de Contraseña
-            passwordModal: document.getElementById('password-modal'),
-            passwordForm: document.getElementById('password-form'),
-            adminPasswordInput: document.getElementById('admin-password-input'),
-            passwordError: document.getElementById('password-error'),
-            cancelPasswordBtn: document.getElementById('cancel-password-btn'),
+            modal: document.getElementById('password-modal'),
+            passInput: document.getElementById('admin-password-input'),
+            passError: document.getElementById('password-error')
         };
 
-        // ----------------------------------------------------
-        // 2. FUNCIONES DE UTILIDAD FIREBASE
-        // ----------------------------------------------------
-
-        /**
-         * Inicializa Firebase y realiza la autenticación (anónima para simplificar).
-         */
-        async function initializeFirebase() {
+        async function init() {
             try {
                 const app = initializeApp(FIREBASE_CONFIG);
                 db = getFirestore(app);
                 auth = getAuth(app);
-
-                // Autenticación anónima: permite que cualquier persona acceda y escriba
                 await signInAnonymously(auth);
                 
-                userId = auth.currentUser.uid;
-                elements.userIdDisplay.textContent = `ID de Sesión: ${userId}`;
-                elements.userIdDisplay.classList.remove('hidden');
-
-                // RUTAS DE DATOS: Asegura la compatibilidad con el entorno Canvas
-                // Usamos una ruta pública compartida para que ambos usuarios vean y actualicen la misma lista
-                // La ruta es: /artifacts/{projectId}/public/data/daily_tasks/main_config
-                configDocRef = doc(db, `/artifacts/${appId}/public/data/daily_tasks/`, 'main_config');
+                configDocRef = doc(db, `/artifacts/${FIREBASE_CONFIG.projectId}/public/data/daily_tasks/`, 'main_config');
                 
+                // 1. Verificar configuración inicial
                 await checkAndSetInitialConfig();
 
-                // 3. INICIAR ESCUCHA DE CAMBIOS EN TIEMPO REAL
-                setupRealtimeListener();
+                // 2. Lógica Mágica: Actualizar tareas si es un nuevo día > 7AM
+                await checkDailyRefresh();
 
-            } catch (error) {
-                console.error("Error al inicializar o autenticar Firebase:", error);
-                elements.loadingScreen.innerHTML = '<p class="text-red-600">Error al cargar la aplicación. Revisa la consola.</p>';
-            } finally {
-                // Ocultar pantalla de carga
+                // 3. Escuchar cambios
+                onSnapshot(configDocRef, (snap) => {
+                    if (snap.exists()) render(snap.data());
+                });
+
+                // Quitar loading
                 setTimeout(() => {
-                    elements.loadingScreen.classList.add('opacity-0', 'pointer-events-none');
-                    elements.appContainer.classList.remove('opacity-0');
+                    els.loading.classList.add('opacity-0', 'pointer-events-none');
+                    els.app.classList.remove('opacity-0');
                 }, 500);
+
+            } catch (e) {
+                console.error(e);
+                els.loading.innerHTML = '<p class="text-red-500">Error loading app</p>';
             }
         }
 
-        /**
-         * Verifica si existe la configuración inicial, si no, la crea.
-         */
-        async function checkAndSetInitialConfig() {
-            try {
-                const docSnap = await getDoc(configDocRef);
-                if (!docSnap.exists()) {
-                    console.log("Configuración no encontrada. Creando valores por defecto.");
-                    await setDoc(configDocRef, DEFAULT_CONFIG);
-                }
-            } catch (error) {
-                 console.error("Error al verificar/crear la configuración inicial:", error);
-            }
-        }
+        // --- LÓGICA DE ACTUALIZACIÓN DIARIA ---
+        async function checkDailyRefresh(force = false) {
+            const snap = await getDoc(configDocRef);
+            if (!snap.exists()) return;
 
-        /**
-         * Configura el listener en tiempo real para la lista de tareas.
-         */
-        function setupRealtimeListener() {
-            onSnapshot(configDocRef, (docSnap) => {
-                if (docSnap.exists()) {
-                    const data = docSnap.data();
-                    renderApp(data);
-                } else {
-                    // Esto solo debería ocurrir si el documento es eliminado. Reiniciar.
-                    checkAndSetInitialConfig();
-                }
-            }, (error) => {
-                console.error("Error en la escucha en tiempo real:", error);
-            });
-        }
-
-        // ----------------------------------------------------
-        // 3. FUNCIONES DE RENDERIZADO Y LÓGICA DE NEGOCIO
-        // ----------------------------------------------------
-
-        /**
-         * Renderiza la aplicación completa con los datos de Firestore.
-         * @param {Object} data - Los datos de la configuración (tasks, points, goal).
-         */
-        function renderApp(data) {
-            const { tasks, current_points, reward_goal, reward_name } = data;
+            const data = snap.data();
+            const now = new Date();
             
-            // --- 1. RENDERIZAR PROGRESIÓN ---
-            const progressPercentage = Math.min(100, (current_points / reward_goal) * 100);
-            elements.progressBar.style.width = `${progressPercentage}%`;
-            elements.pointsDisplay.textContent = `${current_points} / ${reward_goal} puntos`;
-            elements.rewardText.textContent = `Recompensa: ${reward_name}`;
+            // Calculamos la "Fecha Virtual". 
+            // Si son las 6:00 AM del Martes, para nosotros sigue siendo Lunes (no actualizamos).
+            // Si son las 7:01 AM del Martes, ya es Martes.
+            const virtualDate = new Date(now);
+            if (now.getHours() < RESET_HOUR) {
+                virtualDate.setDate(virtualDate.getDate() - 1);
+            }
             
-            // --- 2. RENDERIZAR LISTA DE TAREAS ---
-            elements.taskListContainer.innerHTML = '';
-            
-            if (tasks.length === 0) {
-                elements.emptyListMessage.classList.remove('hidden');
-            } else {
-                elements.emptyListMessage.classList.add('hidden');
-            }
+            // Cadena formato "YYYY-MM-DD"
+            const dateString = virtualDate.toISOString().split('T')[0];
+            const storedDate = data.last_updated_date || "";
 
-            tasks.forEach(task => {
-                // Notar: Si la tarea está en la lista, asumimos que NO está completada 
-                // ya que el código ahora la elimina al completar.
-                const isCompleted = false; 
-                const taskDiv = document.createElement('div');
-                taskDiv.className = `card flex items-center justify-between p-4 rounded-xl shadow-md transition-all ${isCompleted ? 'bg-mint-green/30 opacity-70' : 'bg-white hover:bg-gray-50'}`;
+            // Si la fecha guardada es distinta a la de hoy (despues de las 7am), actualizamos
+            if (dateString !== storedDate || force) {
+                console.log("Detectado nuevo día (o forzado). Actualizando tareas...");
                 
-                // Botón de eliminar (visible solo si isAdminMode es true)
-                const deleteButtonHTML = `
-                    <button data-task-id="${task.id}" 
-                            class="task-delete-btn delete-btn p-1 ml-2 text-deep-rose hover:bg-red-100 rounded-full transition 
-                            ${isAdminMode ? '' : 'hidden-by-admin'}" 
-                            aria-label="Eliminar Tarea">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                            <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 10-2 0v6a1 1 0 102 0V8z" clip-rule="evenodd" />
-                        </svg>
-                    </button>
-                `;
+                // Obtener día de la semana (0-6)
+                // Ojo: Si son las 6AM, virtualDate es ayer, cargará tareas de ayer si no estaban cargadas.
+                // Si son las 8AM, virtualDate es hoy.
+                const dayOfWeek = virtualDate.getDay(); 
+                const dailyTasksRaw = WEEKLY_SCHEDULE[dayOfWeek] || [];
 
-                taskDiv.innerHTML = `
-                    <div class="flex-1 min-w-0 mr-4">
-                        <h4 class="font-semibold text-text-dark text-lg">${task.title}</h4>
-                        <p class="text-sm text-text-dark/60">${task.timeframe}</p>
-                        <p class="text-xs font-mono mt-1 text-deep-rose/80">
-                            +${task.points} puntos
-                        </p>
-                    </div>
-                    <div class="flex items-center space-x-2">
-                        ${deleteButtonHTML}
-                        <button data-task-id="${task.id}" data-task-points="${task.points}" 
-                                class="complete-btn flex items-center justify-center w-10 h-10 rounded-full text-white font-bold 
-                                bg-mint-green hover:bg-[#008080]">
-                            <!-- Icono de Marcar/Completar (Ahora siempre será un '+' o un check, dependiendo de lo que elija) -->
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
-                        </button>
-                    </div>
-                `;
-                elements.taskListContainer.appendChild(taskDiv);
-            });
-
-            // Re-adjuntar listeners de botones
-            document.querySelectorAll('.complete-btn').forEach(button => {
-                button.removeEventListener('click', handleTaskToggle); // Prevenir duplicados
-                button.addEventListener('click', handleTaskToggle);
-            });
-
-            document.querySelectorAll('.task-delete-btn').forEach(button => {
-                button.removeEventListener('click', handleDeleteTask); 
-                button.addEventListener('click', handleDeleteTask);
-            });
-
-
-            // --- 3. RENDERIZAR PANEL DE ADMIN ---
-            if (elements.adminPanel.classList.contains('hidden') || isAdminMode) {
-                elements.rewardGoalInput.value = reward_goal;
-                elements.rewardTextInput.value = reward_name;
-            }
-        }
-
-        /**
-         * Alterna el estado de completado de una tarea, SUMA PUNTOS y la ELIMINA automáticamente.
-         * @param {Event} event - Evento de click.
-         */
-        async function handleTaskToggle(event) {
-            const button = event.currentTarget;
-            const taskId = button.dataset.taskId;
-            
-            button.disabled = true; // Previene doble click
-
-            try {
-                // Obtener datos actuales del documento
-                const docSnap = await getDoc(configDocRef);
-                if (!docSnap.exists()) return;
-                
-                const data = docSnap.data();
-                const currentTasks = data.tasks || [];
-                let currentPoints = data.current_points;
-                
-                const taskToComplete = currentTasks.find(task => task.id === taskId);
-                
-                if (!taskToComplete) {
-                    console.warn("Tarea no encontrada. Acción omitida.");
-                    return;
-                }
-                
-                // 1. Sumar Puntos
-                // Si la tarea ya estaba marcada como completed, no deberíamos llegar aquí,
-                // pero si por alguna razón el usuario usa el botón 'Reiniciar Día', puede que
-                // tenga la propiedad 'completed: true' aunque se muestre pendiente.
-                // Para simplificar, asumimos que si está en la lista, debe ser completada.
-                const points = parseInt(taskToComplete.points || data.points_per_task_default);
-                currentPoints += points;
-                
-                // 2. Eliminar la Tarea (filtra la tarea completada)
-                const newTasks = currentTasks.filter(task => task.id !== taskId);
-                
-                // 3. Actualizar Firestore
-                await updateDoc(configDocRef, {
-                    tasks: newTasks,
-                    current_points: currentPoints 
-                });
-
-            } catch (error) {
-                console.error("Error al completar/eliminar la tarea y actualizar puntos:", error);
-            } finally {
-                button.disabled = false;
-            }
-        }
-
-        /**
-         * Elimina una tarea de la lista (solo accesible en modo admin).
-         * @param {Event} event - Evento de click.
-         */
-        async function handleDeleteTask(event) {
-            const taskId = event.currentTarget.dataset.taskId;
-            
-            if (!isAdminMode) {
-                console.warn("Intento de eliminar tarea sin modo admin activo.");
-                return;
-            }
-
-            try {
-                const docSnap = await getDoc(configDocRef);
-                if (!docSnap.exists()) return;
-                
-                const data = docSnap.data();
-                const currentTasks = data.tasks || [];
-                
-                // Filtra la tarea a eliminar
-                const taskToDelete = currentTasks.find(t => t.id === taskId);
-                const newTasks = currentTasks.filter(t => t.id !== taskId);
-
-                // IMPORTANTE: Si se elimina desde el panel Admin, y la tarea había sido 
-                // completada y luego reiniciada, NO restamos puntos.
-                // Sin embargo, si la tarea tenía 'completed: true' y la eliminamos, 
-                // debería restarse si queremos ser rigurosos.
-                // Dado que ahora la función 'handleTaskToggle' se encarga de sumar y borrar, 
-                // esta función de Admin solo debería usarse para *eliminar sin sumar puntos*.
-                
-                await updateDoc(configDocRef, {
-                    tasks: newTasks,
-                    // current_points se queda igual, solo se modifica en handleTaskToggle
-                });
-
-            } catch (error) {
-                console.error("Error al eliminar la tarea:", error);
-            }
-        }
-
-        // ----------------------------------------------------
-        // 4. LÓGICA DE SEGURIDAD Y ADMINISTRACIÓN
-        // ----------------------------------------------------
-
-        /**
-         * Muestra/Oculta el panel de administración con verificación de contraseña.
-         */
-        function toggleAdminPanel(show) {
-            if (show) {
-                // Si está oculto y queremos mostrarlo, reiniciamos el modal y lo mostramos
-                elements.adminPasswordInput.value = '';
-                elements.passwordError.classList.add('hidden');
-                elements.passwordModal.classList.remove('hidden');
-                elements.adminPasswordInput.focus();
-            } else {
-                // Si está visible o queremos ocultarlo (tras fallo/cancelar)
-                isAdminMode = false;
-                elements.adminPanel.classList.add('hidden');
-                elements.adminToggleBtn.textContent = 'Modo Admin';
-                // Ocultar botones de eliminar para todos
-                document.querySelectorAll('.task-delete-btn').forEach(btn => btn.classList.add('hidden-by-admin'));
-            }
-        }
-
-        /**
-         * Maneja la activación del modo Admin.
-         */
-        function activateAdminMode() {
-            isAdminMode = true;
-            elements.passwordModal.classList.add('hidden');
-            elements.adminPanel.classList.remove('hidden');
-            elements.adminToggleBtn.textContent = 'Ocultar Admin';
-            elements.passwordError.classList.add('hidden');
-            // Mostrar botones de eliminar solo al admin
-            document.querySelectorAll('.task-delete-btn').forEach(btn => btn.classList.remove('hidden-by-admin'));
-            // Refrescar inputs de configuración
-            getDoc(configDocRef).then(docSnap => {
-                if(docSnap.exists()){
-                    const data = docSnap.data();
-                    elements.rewardGoalInput.value = data.reward_goal;
-                    elements.rewardTextInput.value = data.reward_name;
-                }
-            });
-        }
-
-
-        /**
-         * Listener principal para el botón Modo Admin.
-         */
-        elements.adminToggleBtn.addEventListener('click', () => {
-            const isCurrentlyVisible = !elements.adminPanel.classList.contains('hidden');
-            
-            if (!isCurrentlyVisible) {
-                toggleAdminPanel(true); // Mostrar modal de contraseña
-            } else {
-                toggleAdminPanel(false); // Ocultar panel sin contraseña
-            }
-        });
-
-        /**
-         * Maneja el envío del formulario de contraseña.
-         */
-        elements.passwordForm.addEventListener('submit', (e) => {
-            e.preventDefault();
-            const inputPassword = elements.adminPasswordInput.value;
-
-            if (inputPassword === ADMIN_PASSWORD) {
-                activateAdminMode();
-            } else {
-                // Contraseña incorrecta
-                elements.passwordError.classList.remove('hidden');
-                elements.adminPasswordInput.value = '';
-                elements.adminPasswordInput.focus();
-            }
-        });
-
-        /**
-         * Maneja el botón Cancelar en el modal de contraseña.
-         */
-        elements.cancelPasswordBtn.addEventListener('click', () => {
-            elements.passwordModal.classList.add('hidden');
-            elements.passwordError.classList.add('hidden');
-        });
-
-        /**
-         * Maneja la adición de una nueva tarea.
-         */
-        elements.addTaskForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            
-            const title = elements.newTaskTitle.value.trim();
-            const timeframe = elements.newTaskTimeframe.value.trim() || 'Sin Marco Temporal';
-            const points = parseInt(elements.newTaskPoints.value);
-
-            if (!title || isNaN(points) || points <= 0) {
-                console.error("Por favor, introduce un título y puntos válidos (> 0).");
-                return;
-            }
-
-            const newTask = {
-                id: crypto.randomUUID(),
-                title,
-                timeframe,
-                points,
-                completed: false
-            };
-
-            try {
-                const docSnap = await getDoc(configDocRef);
-                if (!docSnap.exists()) return;
-                
-                const currentTasks = docSnap.data().tasks || [];
-                
-                await updateDoc(configDocRef, {
-                    tasks: [...currentTasks, newTask]
-                });
-
-                elements.newTaskTitle.value = '';
-                elements.newTaskTimeframe.value = '';
-                elements.newTaskPoints.value = DEFAULT_CONFIG.points_per_task_default; // Resetear a valor por defecto
-
-            } catch (error) {
-                console.error("Error al añadir tarea:", error);
-            }
-        });
-
-        /**
-         * Maneja la actualización de la meta y el nombre de la recompensa.
-         */
-        elements.updateGoalBtn.addEventListener('click', async () => {
-            const newGoal = parseInt(elements.rewardGoalInput.value);
-            const newRewardName = elements.rewardTextInput.value.trim();
-
-            if (isNaN(newGoal) || newGoal <= 0 || !newRewardName) {
-                console.error("Por favor, introduce una meta de puntos válida y un nombre de recompensa.");
-                return;
-            }
-
-            try {
-                await updateDoc(configDocRef, {
-                    reward_goal: newGoal,
-                    reward_name: newRewardName
-                });
-                console.log("Meta y recompensa actualizadas correctamente.");
-            } catch (error) {
-                console.error("Error al actualizar la meta:", error);
-            }
-        });
-
-        /**
-         * Reinicia todas las tareas a pendientes para un nuevo ciclo (Día/Semana).
-         */
-        elements.resetDayBtn.addEventListener('click', async () => {
-            if (!isAdminMode) return;
-            
-            try {
-                const docSnap = await getDoc(configDocRef);
-                if (!docSnap.exists()) return;
-
-                const data = docSnap.data();
-                const currentTasks = data.tasks || [];
-
-                // Mapear y cambiar 'completed' a false para todas las tareas.
-                // NOTA: Si deseas que las tareas se queden, pero se borren los puntos, 
-                // tendrías que cambiar la lógica de puntos aquí. 
-                // Pero como has pedido que se borren al completar, el botón de 'Reiniciar Día' 
-                // solo resetea el estado 'completed' (aunque ahora es menos relevante) 
-                // para las tareas que hayan sido *agregadas* pero no completadas.
-                const newTasks = currentTasks.map(task => ({
-                    ...task,
+                // Convertir al formato de objetos con ID
+                const newTasks = dailyTasksRaw.map(item => ({
+                    id: crypto.randomUUID(),
+                    title: item.t,
+                    timeframe: "Today", // Simplificado para inglés
+                    points: item.p,
                     completed: false
                 }));
 
                 await updateDoc(configDocRef, {
-                    tasks: newTasks
-                    // current_points NO se resetean, se mantienen para el progreso de recompensa
+                    tasks: newTasks,
+                    last_updated_date: dateString
                 });
-                console.log("Día reiniciado. Tareas marcadas como pendientes.");
+            }
+        }
 
-            } catch (error) {
-                console.error("Error al reiniciar el día:", error);
+        async function checkAndSetInitialConfig() {
+            const snap = await getDoc(configDocRef);
+            if (!snap.exists()) {
+                await setDoc(configDocRef, {
+                    tasks: [],
+                    current_points: 0,
+                    reward_goal: 1000,
+                    reward_name: "Family Dinner",
+                    last_updated_date: "1970-01-01" // Fecha muy vieja para forzar update
+                });
+            }
+        }
+
+        function render(data) {
+            // Progreso
+            const pct = Math.min(100, (data.current_points / data.reward_goal) * 100);
+            els.progressBar.style.width = `${pct}%`;
+            els.points.innerText = `${data.current_points} / ${data.reward_goal} pts`;
+            els.rewardLabel.innerText = data.reward_name;
+
+            // Admin inputs
+            if(isAdminMode) {
+                els.rewardGoal.value = data.reward_goal;
+                els.rewardText.value = data.reward_name;
+            }
+
+            // Tareas
+            els.list.innerHTML = '';
+            if (!data.tasks || data.tasks.length === 0) {
+                els.empty.classList.remove('hidden');
+            } else {
+                els.empty.classList.add('hidden');
+                data.tasks.forEach(task => {
+                    const div = document.createElement('div');
+                    div.className = "card flex items-center justify-between p-4 rounded-xl bg-white hover:bg-gray-50 transition-all";
+                    
+                    // Botón Eliminar (Solo Admin)
+                    const delBtn = isAdminMode ? 
+                        `<button onclick="window.deleteTask('${task.id}')" class="delete-btn p-1 ml-2 text-deep-rose hover:bg-red-100 rounded-full">🗑️</button>` : '';
+
+                    div.innerHTML = `
+                        <div class="flex-1 min-w-0 mr-4">
+                            <h4 class="font-semibold text-text-dark text-lg">${task.title}</h4>
+                            <p class="text-xs font-mono mt-1 text-deep-rose/80">+${task.points} pts</p>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            ${delBtn}
+                            <button onclick="window.completeTask('${task.id}')" class="complete-btn flex items-center justify-center w-10 h-10 rounded-full text-white font-bold bg-mint-green hover:bg-[#008080] shadow-md">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+                            </button>
+                        </div>
+                    `;
+                    els.list.appendChild(div);
+                });
+            }
+        }
+
+        // --- FUNCIONES GLOBALES (Window) ---
+        
+        // Completar = Sumar puntos + Borrar tarea
+        window.completeTask = async (id) => {
+            const snap = await getDoc(configDocRef);
+            if (!snap.exists()) return;
+            const d = snap.data();
+            const task = d.tasks.find(t => t.id === id);
+            if (!task) return;
+
+            const newPoints = d.current_points + parseInt(task.points);
+            const newTasks = d.tasks.filter(t => t.id !== id);
+
+            await updateDoc(configDocRef, { tasks: newTasks, current_points: newPoints });
+        };
+
+        window.deleteTask = async (id) => {
+            if (!isAdminMode) return;
+            const snap = await getDoc(configDocRef);
+            const newTasks = snap.data().tasks.filter(t => t.id !== id);
+            await updateDoc(configDocRef, { tasks: newTasks });
+        };
+
+        // --- EVENTOS DE INTERFAZ ---
+
+        document.getElementById('add-task-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const title = document.getElementById('new-task-title').value;
+            const points = parseInt(document.getElementById('new-task-points').value);
+            
+            const snap = await getDoc(configDocRef);
+            const currentTasks = snap.data().tasks || [];
+            await updateDoc(configDocRef, {
+                tasks: [...currentTasks, { id: crypto.randomUUID(), title, timeframe: 'Manual', points, completed: false }]
+            });
+            e.target.reset();
+        });
+
+        document.getElementById('update-goal-btn').addEventListener('click', async () => {
+            const goal = parseInt(els.rewardGoal.value);
+            const name = els.rewardText.value;
+            if(goal && name) await updateDoc(configDocRef, { reward_goal: goal, reward_name: name });
+        });
+
+        document.getElementById('force-refresh-btn').addEventListener('click', async () => {
+             if(confirm("Are you sure? This will delete current pending tasks and load today's schedule.")) {
+                 await checkDailyRefresh(true);
+             }
+        });
+
+        // Toggle Admin
+        document.getElementById('admin-toggle-btn').addEventListener('click', () => {
+            if (isAdminMode) {
+                isAdminMode = false;
+                els.adminPanel.classList.add('hidden');
+                document.getElementById('admin-toggle-btn').innerText = "Admin Mode";
+                render(currentDataCache); // Re-render para ocultar botones borrar
+            } else {
+                els.modal.classList.remove('hidden');
+                els.passInput.value = '';
+                els.passInput.focus();
             }
         });
 
+        // Password logic
+        document.getElementById('password-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            if (els.passInput.value === ADMIN_PASSWORD) {
+                isAdminMode = true;
+                els.modal.classList.add('hidden');
+                els.passError.classList.add('hidden');
+                els.adminPanel.classList.remove('hidden');
+                document.getElementById('admin-toggle-btn').innerText = "Exit Admin";
+                // Forzar re-lectura para actualizar UI
+                getDoc(configDocRef).then(s => render(s.data()));
+            } else {
+                els.passError.classList.remove('hidden');
+            }
+        });
 
-        // ----------------------------------------------------
-        // 5. INICIALIZACIÓN
-        // ----------------------------------------------------
-        if (FIREBASE_CONFIG.projectId) {
-            initializeFirebase();
-        } else {
-             console.error("ERROR: FIREBASE_CONFIG no está definida. Revisa si copiaste la configuración correctamente.");
-             elements.loadingScreen.innerHTML = '<p class="text-red-600">Error de configuración de Firebase. Revisa la consola.</p>';
-        }
+        document.getElementById('cancel-password-btn').addEventListener('click', () => {
+            els.modal.classList.add('hidden');
+            els.passError.classList.add('hidden');
+        });
 
+        let currentDataCache = {}; 
+        onSnapshot(configDocRef, (s) => { if(s.exists()) { currentDataCache = s.data(); render(s.data()); } });
+
+        init();
     </script>
 </body>
 </html>
