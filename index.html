@@ -11,7 +11,7 @@
         import { getFirestore, doc, onSnapshot, setDoc, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        setLogLevel('silent'); // Reducimos el ruido en consola
+        setLogLevel('silent'); // Silenciar logs para que no molesten
 
         tailwind.config = {
             theme: {
@@ -188,6 +188,7 @@
 
         let db, auth, configDocRef;
         let isAdminMode = false;
+        let currentDataCache = {}; 
 
         // Elementos DOM
         const els = {
@@ -213,6 +214,7 @@
                 auth = getAuth(app);
                 await signInAnonymously(auth);
                 
+                // Inicializamos la referencia AHORA que db existe
                 configDocRef = doc(db, `/artifacts/${FIREBASE_CONFIG.projectId}/public/data/daily_tasks/`, 'main_config');
                 
                 // 1. Verificar configuración inicial
@@ -221,9 +223,12 @@
                 // 2. Lógica Mágica: Actualizar tareas si es un nuevo día > 7AM
                 await checkDailyRefresh();
 
-                // 3. Escuchar cambios
+                // 3. Escuchar cambios (MOVIDO AQUÍ PARA EVITAR EL ERROR)
                 onSnapshot(configDocRef, (snap) => {
-                    if (snap.exists()) render(snap.data());
+                    if (snap.exists()) {
+                        currentDataCache = snap.data();
+                        render(snap.data());
+                    }
                 });
 
                 // Quitar loading
@@ -247,14 +252,12 @@
             const now = new Date();
             
             // Calculamos la "Fecha Virtual". 
-            // Si son las 6:00 AM del Martes, para nosotros sigue siendo Lunes (no actualizamos).
-            // Si son las 7:01 AM del Martes, ya es Martes.
+            // Si son las 6:00 AM del Martes, para nosotros sigue siendo Lunes.
             const virtualDate = new Date(now);
             if (now.getHours() < RESET_HOUR) {
                 virtualDate.setDate(virtualDate.getDate() - 1);
             }
             
-            // Cadena formato "YYYY-MM-DD"
             const dateString = virtualDate.toISOString().split('T')[0];
             const storedDate = data.last_updated_date || "";
 
@@ -262,17 +265,13 @@
             if (dateString !== storedDate || force) {
                 console.log("Detectado nuevo día (o forzado). Actualizando tareas...");
                 
-                // Obtener día de la semana (0-6)
-                // Ojo: Si son las 6AM, virtualDate es ayer, cargará tareas de ayer si no estaban cargadas.
-                // Si son las 8AM, virtualDate es hoy.
                 const dayOfWeek = virtualDate.getDay(); 
                 const dailyTasksRaw = WEEKLY_SCHEDULE[dayOfWeek] || [];
 
-                // Convertir al formato de objetos con ID
                 const newTasks = dailyTasksRaw.map(item => ({
                     id: crypto.randomUUID(),
                     title: item.t,
-                    timeframe: "Today", // Simplificado para inglés
+                    timeframe: "Today",
                     points: item.p,
                     completed: false
                 }));
@@ -292,7 +291,7 @@
                     current_points: 0,
                     reward_goal: 1000,
                     reward_name: "Family Dinner",
-                    last_updated_date: "1970-01-01" // Fecha muy vieja para forzar update
+                    last_updated_date: "1970-01-01" 
                 });
             }
         }
@@ -320,7 +319,6 @@
                     const div = document.createElement('div');
                     div.className = "card flex items-center justify-between p-4 rounded-xl bg-white hover:bg-gray-50 transition-all";
                     
-                    // Botón Eliminar (Solo Admin)
                     const delBtn = isAdminMode ? 
                         `<button onclick="window.deleteTask('${task.id}')" class="delete-btn p-1 ml-2 text-deep-rose hover:bg-red-100 rounded-full">🗑️</button>` : '';
 
@@ -343,7 +341,6 @@
 
         // --- FUNCIONES GLOBALES (Window) ---
         
-        // Completar = Sumar puntos + Borrar tarea
         window.completeTask = async (id) => {
             const snap = await getDoc(configDocRef);
             if (!snap.exists()) return;
@@ -391,13 +388,12 @@
              }
         });
 
-        // Toggle Admin
         document.getElementById('admin-toggle-btn').addEventListener('click', () => {
             if (isAdminMode) {
                 isAdminMode = false;
                 els.adminPanel.classList.add('hidden');
                 document.getElementById('admin-toggle-btn').innerText = "Admin Mode";
-                render(currentDataCache); // Re-render para ocultar botones borrar
+                if(currentDataCache.tasks) render(currentDataCache);
             } else {
                 els.modal.classList.remove('hidden');
                 els.passInput.value = '';
@@ -405,7 +401,6 @@
             }
         });
 
-        // Password logic
         document.getElementById('password-form').addEventListener('submit', (e) => {
             e.preventDefault();
             if (els.passInput.value === ADMIN_PASSWORD) {
@@ -414,7 +409,6 @@
                 els.passError.classList.add('hidden');
                 els.adminPanel.classList.remove('hidden');
                 document.getElementById('admin-toggle-btn').innerText = "Exit Admin";
-                // Forzar re-lectura para actualizar UI
                 getDoc(configDocRef).then(s => render(s.data()));
             } else {
                 els.passError.classList.remove('hidden');
@@ -425,9 +419,6 @@
             els.modal.classList.add('hidden');
             els.passError.classList.add('hidden');
         });
-
-        let currentDataCache = {}; 
-        onSnapshot(configDocRef, (s) => { if(s.exists()) { currentDataCache = s.data(); render(s.data()); } });
 
         init();
     </script>
